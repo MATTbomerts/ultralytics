@@ -67,3 +67,4 @@ ultralytics_thop==2.0.0
 wandb==0.19.7
 x2paddle==1.6.0
 yt_dlp==2025.2.19
+
