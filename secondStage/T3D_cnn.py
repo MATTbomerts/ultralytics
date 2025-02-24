@@ -126,11 +126,9 @@ class NiiDataset2(Dataset):
         
         img,label,file_name,pred_box = self.data[idx]
         img=img.astype(np.float32)  #原本的大小是20，40，16
-        target_shape = (16, 32, 16)  #如果是在这里进行3D形状的转换，那么在第一阶段的输出中就不用再管了
-        
-        zoom_factors = np.array(target_shape) / np.array(img.shape)
-        img = zoom(img, zoom_factors)   #数据缩放的方式是插值操作，不是简单的裁剪
+       
         img=img.astype(np.uint8)  #转换为uint8类型，再通过toTensor转换为【0-1】之间，归一化
+        img=img[:,:16,:]  #前一半
         if self.transform:  #transforms.toTensor()操作会将形状为(H,W,depth)的数组转换为(depth,H,W)，其实是对的，因为3D-CNN输入第一个维度就是depth
             img = self.transform(img)
         
@@ -482,9 +480,9 @@ def CMB_3DCNN_main(resolution):
         model.load_state_dict(torch.load(f"parameters/swi/CMB_3DCNN_norm_lr0001_91.pth"))
         test_model(model, test_loader)
     
-    # if Val:
-    #     model.load_state_dict(torch.load("parameters/CMB_3DCNN_new1.pth"))
-    #     val_model(model, valid_loader)
+    if Val:
+        model.load_state_dict(torch.load("parameters/CMB_3DCNN_new1.pth"))
+        val_model(model, valid_loader)
 
 if __name__ == "__main__":
     # Train = True
@@ -494,6 +492,6 @@ if __name__ == "__main__":
     # Test=False
     
     # Val=True
-    # Val=False
+    Val=False
     resolution="high"
     CMB_3DCNN_main(resolution)
