@@ -11,13 +11,6 @@ import torch
 from ultralytics.utils.metrics import box_iou
 import torchvision.transforms as transforms
 
-second_devices=["Patient-0000406857","Patient-0000589446",'Patient-0000745885','Patient-0003537968'
-                ,'Patient-0010134951','Patient-0018227242','Patient-0018463963']
-
-
-fixed_width = 16  # 设置固定宽度
-fixed_height = 16 # 设置固定高度
-
 def sort_files(file_list):
     # 正则表达式提取文件名中的数字部分
     def extract_number(filename):
@@ -31,9 +24,6 @@ def sort_files(file_list):
     sorted_files = sorted(file_list, key=extract_number)
     return sorted_files
 
-# 加载YOLOv8模型
-model = YOLO("runs/detect/train34/weights/best.pt")  
-output_dir = "/mnt/hdd1/zhulu/hospital/cropped_imgs"
 # os.makedirs(output_dir, exist_ok=True)
 
  #从第一阶段验证集中读取不同病人的数据，再跑到对应病人的原始图像数据文件中获取3d数据
@@ -57,9 +47,7 @@ input_imgs=os.listdir(input_img_dir)
 #         patient_dict[patient_num].append(img)
 #endregion
 
-""" 所有层面图像 """
-#先测一个病人,以病人为单位预测
-patient_dict=dict()
+
 
 #region
 # patient_img_path="/mnt/hdd1/zhulu/hospital/Patient-0000808485/HD-BET/SWI"  #这是第一阶段的数据
@@ -74,24 +62,10 @@ patient_dict=dict()
 #endregion
 
 
-val_patients=["Patient-0018699418","Patient-0018847234","Patient-0019014525","Patient-0019639742"]
-
-patient_dirs="/mnt/hdd1/zhulu/blood_stage2/blood_anno/PNG"
-for patient_dir in os.listdir(patient_dirs):
-    if patient_dir not in val_patients:
-        continue
-    patient_img_path=os.path.join(patient_dirs,patient_dir,"Series-Ax SWAN new")
-    patient_imgs=[img for img in os.listdir(patient_img_path) if img.endswith(".png")]
-    patient_imgs=sort_files(patient_imgs) #根据图像的切片号进行排序，后面才能直接根据index进行上下层读取
-    patient_dict[patient_dir]=patient_imgs  #切面没有进行排序
 
 
-# 模型加载
-model_3D=CNN3D(2).cuda()
 
-gain,pad,shape=1.02,10,(512,512,3)  #原医学图像图只有一个通道，是灰白图
-BGR=True
-reshape_size=16
+
 
 
 def patient_build_nii(patient_dict,model):
@@ -293,7 +267,7 @@ def patient_build_nii(patient_dict,model):
                             false_count+=1
                             file_name=f"/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/{patient}-{layer_num}-{j}"
                             all_data.append([crop_Data,0,file_name,xyxy])
-            cv2.imwrite("temp/yolo_crop.png", image_swi_draw)
+            # cv2.imwrite("temp/yolo_crop.png", image_swi_draw)
                         # nib.save(nii_img,f'/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/{patient}-{layer_num}-{j}.nii')
 
     transform = transforms.Compose([
@@ -311,8 +285,37 @@ def patient_build_nii(patient_dict,model):
     print("ground_truth:",ground_truth_count)
     print("false_count:",false_count) #表示yolo预测出来的框中有多少是假的
 
+if __name__ == "__main__":
+    second_devices=["Patient-0000406857","Patient-0000589446",'Patient-0000745885','Patient-0003537968'
+                ,'Patient-0010134951','Patient-0018227242','Patient-0018463963']
+    fixed_width = 16  # 设置固定宽度
+    fixed_height = 16 # 设置固定高度
+    
+    
+    # 加载YOLOv8模型
+    model = YOLO("runs/detect/train34/weights/best.pt")  
+    output_dir = "/mnt/hdd1/zhulu/hospital/cropped_imgs"
+    
+    """ 所有层面图像 """
+    #先测一个病人,以病人为单位预测
+    patient_dict=dict()
+    
+    val_patients=["Patient-0018699418","Patient-0018847234","Patient-0019014525","Patient-0019639742"]
 
-patient_build_nii(patient_dict,model)
+    patient_dirs="/mnt/hdd1/zhulu/blood_stage2/blood_anno/PNG"
+    for patient_dir in os.listdir(patient_dirs):
+        if patient_dir not in val_patients:
+            continue
+        patient_img_path=os.path.join(patient_dirs,patient_dir,"Series-Ax SWAN new")
+        patient_imgs=[img for img in os.listdir(patient_img_path) if img.endswith(".png")]
+        patient_imgs=sort_files(patient_imgs) #根据图像的切片号进行排序，后面才能直接根据index进行上下层读取
+        patient_dict[patient_dir]=patient_imgs  #切面没有进行排序
+    
+    # 模型加载
+    model_3D=CNN3D(2).cuda()
 
-
-#在实际预测过程中,不关心真实标签,随便设置,只关心预测结果
+    gain,pad,shape=1.02,10,(512,512,3)  #原医学图像图只有一个通道，是灰白图
+    BGR=True
+    reshape_size=16
+    
+    patient_build_nii(patient_dict,model)
