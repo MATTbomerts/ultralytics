@@ -1,0 +1,4 @@
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00055-2|0    |1    |[[315, 324, 331, 340]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/CMB/Patient-0018699418-00057-0|1    |1    |[[350, 295, 366, 311]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/CMB/Patient-0018699418-00060-1|1    |0    |[[349, 298, 365, 314]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00060-2|0    |1    |[[308, 330, 324, 346]]

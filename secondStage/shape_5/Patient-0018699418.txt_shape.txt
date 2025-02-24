@@ -1,0 +1,7 @@
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00041-1|0    |1    |[[363, 369, 379, 385]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00048-3|0    |1    |[[272, 264, 288, 280]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00051-0|0    |1    |[[180, 189, 196, 205]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00053-1|0    |1    |[[313, 327, 329, 343]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00061-3|0    |1    |[[218, 234, 234, 250]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00072-4|0    |1    |[[258, 266, 274, 282]]
+/mnt/hdd1/zhulu/hospital/second_stage/val_all/Non-CMB/Patient-0018699418-00087-0|0    |1    |[[156, 344, 172, 360]]
