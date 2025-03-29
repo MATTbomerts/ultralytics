@@ -179,3 +179,4 @@ temp/
 test/
 yolov8n.pt
 yolo11n.pt
+secondStage/
