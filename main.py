@@ -46,10 +46,7 @@ def sort_files(file_list):
  #从第一阶段验证集中读取不同病人的数据，再跑到对应病人的原始图像数据文件中获取3d数据
  #为了加快数据的处理，先把验证集中的数据按照病人划分到一起
  #但是第一阶段测试集已经变了，加入了第二阶段的病人了，因此要排除一下
-input_img_dir="/mnt/hdd1/zhulu/hospital/images/val"   
-input_label_dir="/mnt/hdd1/zhulu/hospital/labels/val"
 
-input_imgs=os.listdir(input_img_dir)
 
 #加载dicom文件
 def load_dicom(dcm_dir):
