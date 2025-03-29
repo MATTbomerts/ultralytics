@@ -1,6 +1,7 @@
 import os
 import cv2
 import ast
+from tqdm import tqdm
 
 # file_dir=["/mnt/hdd1/zhulu/hospital/second_stage/Yolo23d/high/all","/mnt/hdd1/zhulu/hospital/second_stage/Yolo23d/high/add3"]
 file_dir="/mnt/hdd1/zhulu/blood_stage2/tmp/total"
@@ -9,7 +10,7 @@ phase=["phase","Series-FILT_PHA_ Ax SWAN new"]
 
 
 
-for patient in os.listdir(file_dir):
+for patient in tqdm(os.listdir(file_dir)):
     swi_name=swi[0]
     phase_name=phase[0]
     if swi[0] not in os.listdir(os.path.join(file_dir,patient)):

@@ -180,3 +180,7 @@ test/
 yolov8n.pt
 yolo11n.pt
 secondStage/
+png/
+tmp_data/
+excel/
+results/

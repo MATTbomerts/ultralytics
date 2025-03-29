@@ -1,5 +1,5 @@
 import glob
-from PIL import Image
+
 import matplotlib.pyplot as plt
 import numpy as np
 import ast  
@@ -12,25 +12,17 @@ from torch.optim.lr_scheduler import MultiStepLR,ExponentialLR,CosineAnnealingLR
 import nibabel as nib
 from scipy.ndimage import zoom
 from tqdm import tqdm
-from PIL import Image
+
 from sklearn.model_selection import train_test_split
 import sys
 import os
 import random
-from sklearn.metrics import accuracy_score
+import json
+
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
-
-
 from my_tool.utils import read_data,read_add_data,read_swi_data
 
-
-
-
-# print("Current file path:", os.path.abspath(__file__))
-
-# # 打印当前工作目录
-# print("Current working directory:", os.getcwd())
 
 def set_seed(seed):
     random.seed(seed)
@@ -88,30 +80,48 @@ class NiiDataset(Dataset):
         descrip = nii_data.header['descrip'].item().decode('utf-8')
         bbox_str = descrip.split('Bounding boxes: ')[1]  # 提取列表部分
         bbox_list = ast.literal_eval(bbox_str) 
-        #得到的是numpy.memmap数据类型，后面的transform不会生效
-        
-        #原本的方式标注框大小不一致，因此需要进行缩放转换，现在不需要
-        #region
-        # img = img.astype(np.float32)  #原本的大小是20，40，16 #应该是不管什么样的大小都能进行转换
-        # target_shape = (16, 32, 16) 
-        # first_layer_image = Image.fromarray(img[:,:,7].astype(np.uint8))
-        # # 保存图像
-        # first_layer_image.save('temp/first_layer.png')
-        # zoom_factors = np.array(target_shape) / np.array(img.shape)
-        # img = zoom(img, zoom_factors)   #数据缩放的方式是插值操作，不是简单的裁剪
-        # zoom_layer_image = Image.fromarray(img[:,:,7].astype(np.uint8))
-        # # 保存图像
-        # zoom_layer_image.save('temp/zoom_layer.png')
-        #endregion
         
         img=img.astype(np.uint8)  #转换为float32类型
-        swi_img=img[:,16:,:] #后一半
+        swi_img=img[:,16:,:] #后一半为phase图像无误
 
         if self.transform:  #transforms.toTensor()操作会将形状为(H,W,depth)的数组转换为(depth,H,W)，其实是对的，因为3D-CNN输入第一个维度就是depth
             img = self.transform(swi_img)  # 已经经过归一化[0-1]之间浮点数
         label = self.labels[idx]  
         
         return img, label,file_name,torch.tensor(bbox_list)
+
+
+# 定义数据集类
+class PredNiiDataset(Dataset):
+    def __init__(self, data, transform=None):
+        self.data = data
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data)
+    
+    
+    def __getitem__(self, idx):
+        # 返回拿到样本的图像数值数据和标签，但为了能拿到bad case 需要进一步得到数据的名称
+        # file_name="/".join(self.file_paths[idx].split("/")[-2:])
+        # nii_data = nib.load(self.file_paths[idx])
+        # img = nii_data.get_fdata()
+        # descrip = nii_data.header['descrip'].item().decode('utf-8')
+        # bbox_str = descrip.split('Bounding boxes: ')[1]  # 提取列表部分
+        # bbox_list = ast.literal_eval(bbox_str) 
+        img=self.data[idx][0]
+        label=self.data[idx][1]
+        file_name=self.data[idx][2]
+        bbox_list=self.data[idx][3]
+        
+        img=img.astype(np.uint8)  #转换为float32类型
+        pha_img=img[:,16:,:] #后一半为phase图像无误
+
+        if self.transform:  #transforms.toTensor()操作会将形状为(H,W,depth)的数组转换为(depth,H,W)，其实是对的，因为3D-CNN输入第一个维度就是depth
+            pha_img = self.transform(pha_img)  # 已经经过归一化[0-1]之间浮点数
+          
+        
+        return pha_img, label,file_name,torch.tensor(bbox_list)
 
 
 class NiiDataset2(Dataset):
@@ -195,6 +205,64 @@ class CNN3D(nn.Module):
         x = self.dropout(x)
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
+        return x
+
+class ComplexCNN3D(nn.Module):
+    def __init__(self, classes):
+        super(ComplexCNN3D, self).__init__()
+        
+        # 增加卷积层和使用残差连接
+        self.conv1 = nn.Conv3d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm3d(32)
+        self.conv2 = nn.Conv3d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm3d(64)
+        
+        self.conv3 = nn.Conv3d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm3d(128)
+        self.conv4 = nn.Conv3d(128, 128, kernel_size=3, stride=1, padding=1)
+        self.bn4 = nn.BatchNorm3d(128)
+        
+        self.conv5 = nn.Conv3d(128, 256, kernel_size=3, stride=1, padding=1)
+        self.bn5 = nn.BatchNorm3d(256)
+        
+        # 引入残差连接
+        self.residual_block = nn.Sequential(
+            nn.Conv3d(128, 128, kernel_size=1),
+            nn.BatchNorm3d(128)
+        )
+        
+        self.pool = nn.MaxPool3d(kernel_size=2, stride=2)
+        
+        # 更复杂的全连接层
+        self.fc1 = nn.Linear(256*2*2*2, 512)  # 增加更大的隐藏层
+        self.fc2 = nn.Linear(512, 128)
+        self.fc3 = nn.Linear(128, 32)
+        self.fc4 = nn.Linear(32, classes)
+        
+        # Dropout 和正则化
+        self.dropout = nn.Dropout(0.5)
+        
+    def forward(self, x):
+        # 前向传播增加残差连接
+        x1 = self.pool(torch.relu(self.bn1(self.conv1(x))))
+        x2 = torch.relu(self.bn2(self.conv2(x1)))
+        x3 = self.pool(torch.relu(self.bn3(self.conv3(x2))))
+        
+        # 使用残差连接
+        residual = self.residual_block(x3)
+        x4 = torch.relu(self.bn4(self.conv4(x3 + residual)))  # 跳跃连接
+        
+        x5 = self.pool(torch.relu(self.bn5(self.conv5(x4))))
+        
+        # 扁平化
+        x = x5.view(-1, 256*2*2*2)
+        
+        # 更复杂的全连接层
+        x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = torch.relu(self.fc2(x))
+        x = torch.relu(self.fc3(x))
+        x = self.fc4(x)  # 输出层
         return x
 
 # 训练和测试函数
@@ -287,7 +355,7 @@ def train_model(model, train_loader,test_loader, criterion, optimizer,scheduler,
         #如果best_loss小但是当前test_loss大的话，就有一轮没有提升了
         if best_loss - test_loss > min_delta:  
             best_loss = test_loss
-            torch.save(model.state_dict(), f"parameters/phase/CMB_3DCNN_norm_lr0001_41.pth")
+            torch.save(model.state_dict(), f"parameters/res_model/phase/CMB_3DCNN_norm_lr0001_50.pth")
             no_improvement_count = 0  # Reset the counter if there's an improvement
         else:
             no_improvement_count += 1
@@ -343,39 +411,60 @@ def val_model(model, valid_loader):
     
     patient_dict={}
     for i in range(len(all_files)):
-        patient_name="-".join(all_files[i].split("/")[-1].split("-")[:2])
+        patient_name=all_files[i].split("/")[-1].split("-")[0]
         if patient_name not in patient_dict:
             patient_dict[patient_name]=[]
         patient_dict[patient_name].append((all_files[i],all_labels[i],all_pred_labels[i],all_pred_boxes[i]))
     
     
     patient_names=patient_dict.keys()
+    
+    for patient in patient_dict:
+        patient_data = []
+        for i in range(len(patient_dict[patient])):
+            sample_name = patient_dict[patient][i][0]
+            pred_label = patient_dict[patient][i][2]
+            pred_box = patient_dict[patient][i][3]
+            if pred_label==1:
+                # 将数据添加到患者的数据列表中
+                patient_data.append({
+                    "sample_name": sample_name,
+                    "pred_label": pred_label,
+                    "pred_box": pred_box
+                })
+            
+        # 为每个病人创建一个 JSON 文件并将其数据写入该文件
+        if not os.path.exists(f"results/{patient}"):
+            os.makedirs(f"results/{patient}")
+        with open(f"results/{patient}/results.json", "w") as f:
+            json.dump(patient_data, f, indent=4)
+    
     # for patient in patient_names:
-    #     # """ 打印所有错误预测的样本 """
-    #     # # print("wrong predict samples: ",all_wrong_predict_files)
-    #     # with open("secondStage/wrong_predict_samples_{patient}.txt","w") as f:
-    #     #     for item in all_wrong_predict_files:
-    #     #         f.write(item)
-    #     #         f.write("\n")
+        # """ 打印所有错误预测的样本 """
+        # # print("wrong predict samples: ",all_wrong_predict_files)
+        # with open("secondStage/wrong_predict_samples_{patient}.txt","w") as f:
+        #     for item in all_wrong_predict_files:
+        #         f.write(item)
+        #         f.write("\n")
         
-    #     """ 打印所有预测结果，真实标签 | 预测结果 """
-    #     with open(f"secondStage/phase_pred/all_samples_predict_{patient}.txt","w") as f:
+        # """ 打印所有预测结果，真实标签 | 预测结果 """
+        # with open(f"secondStage/phase_pred/{patient}.txt","w") as f:
+        #     for i in range(len(patient_dict[patient])):
+        #         sample_name=patient_dict[patient][i][0]
+        #         pred_label=patient_dict[patient][i][2]
+        #         pred_box=patient_dict[patient][i][3]
+        #         f.write(f"{sample_name:<30}|{pred_label:<5}|{pred_box}\n")
+        
+        
+    # #整体所有swi预测病人的结果
+    # with open(f"secondStage/phase_pred/FromSwi_all_samples_predict.txt","w") as f:    
+    #     for patient in patient_names:
     #         for i in range(len(patient_dict[patient])):
     #             sample_name=patient_dict[patient][i][0]
     #             label=patient_dict[patient][i][1]
     #             pred_label=patient_dict[patient][i][2]
     #             pred_box=patient_dict[patient][i][3]
     #             f.write(f"{sample_name:<30}|{label:<5}|{pred_label:<5}|{pred_box}\n")
-    
-    #整体所有swi预测病人的结果
-    with open(f"secondStage/phase_pred/FromSwi_all_samples_predict.txt","w") as f:    
-        for patient in patient_names:
-            for i in range(len(patient_dict[patient])):
-                sample_name=patient_dict[patient][i][0]
-                label=patient_dict[patient][i][1]
-                pred_label=patient_dict[patient][i][2]
-                pred_box=patient_dict[patient][i][3]
-                f.write(f"{sample_name:<30}|{label:<5}|{pred_label:<5}|{pred_box}\n")
 
 def test_model(model, test_loader):
     # 在test_model中加入是否进行可视化的代码
@@ -448,7 +537,7 @@ def CMB_3DCNN_main(resolution):
     valid_dataset = NiiDataset(valid_files, val_lbl, transform)
     
 
-    # 假设我们要添加一些新的数据到现有的Dataset
+    # 假设我们要添加一些新的数据到现有的Dataset，也划分为训练和测试集
     add_dir="/mnt/hdd1/zhulu/hospital/second_stage/Yolo23d/high/add3"
     add_datas_files,add_labels = read_add_data(class_names, class_labels,add_dir,resolution)
     add_train_files, add_test_files, add_train_labels, add_test_labels = train_test_split(
@@ -471,14 +560,16 @@ def CMB_3DCNN_main(resolution):
     
     # train_loader = DataLoader(test_dataset, batch_size=64, shuffle=True)  # 进行数据打乱
     # test_loader = DataLoader(train_dataset, batch_size=64, shuffle=False)
+    
     valid_loader = DataLoader(valid_dataset, batch_size=2, shuffle=False)
 
-    model = CNN3D(2).cuda()
+    # model = CNN3D(2).cuda()
+    model = ComplexCNN3D(2).cuda()
     
     # 定义类别权重，对于CMB出血点应该给予更高的权重
-    class_weights = torch.tensor([1.0, 30.0]).cuda()  # Non-CMB 的权重是 1.0，CMB 的权重是 5.0，与标签顺序一致
+    class_weights = torch.tensor([1.0, 50.0]).cuda()  # Non-CMB 的权重是 1.0，CMB 的权重是 5.0，与标签顺序一致
     criterion = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = optim.Adam(model.parameters(), lr=0.005)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = ExponentialLR(optimizer, gamma=0.8)
     # scheduler = CosineAnnealingLR(optimizer, T_max=100, eta_min=0)
 
@@ -488,21 +579,21 @@ def CMB_3DCNN_main(resolution):
         plot_loss_curve(train_loss,test_loss,save_path='secondStage/figs/loss_curve_norm_lr_exp.png')
         
     if Test:
-        model.load_state_dict(torch.load(f"parameters/phase/CMB_3DCNN_norm_lr0001_41.pth"))
+        model.load_state_dict(torch.load(f"parameters/res_model/phase/CMB_3DCNN_norm_lr0001_50.pth"))
         test_model(model, test_loader)
     
     if Val:
-        model.load_state_dict(torch.load(f"parameters/phase/CMB_3DCNN_norm_lr0001_41.pth"))
+        model.load_state_dict(torch.load(f"parameters/res_model/phase/CMB_3DCNN_norm_lr0001_70.pth"))
         val_model(model, valid_loader)
 
 if __name__ == "__main__":
     # Train = True
     Train = False  #如果不在函数中传递此参数，但在函数直接使用到这个参数，会被视为全局变量
     
-    Test = True
-    # Test=False
+    # Test = True
+    Test=False
     
-    # Val=True
-    Val=False
+    Val=True
+    # Val=False
     resolution="high"
     CMB_3DCNN_main(resolution)

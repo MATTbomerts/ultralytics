@@ -105,7 +105,8 @@ class NiiDataset(Dataset):
         #endregion
         
         img=img.astype(np.uint8)  #转换为float32类型
-        swi_img=img[:,:16,:]  #前一半
+        swi_img=img[:,:16,:]  #前一半,确认是swi
+        
 
         if self.transform:  #transforms.toTensor()操作会将形状为(H,W,depth)的数组转换为(depth,H,W)，其实是对的，因为3D-CNN输入第一个维度就是depth
             img = self.transform(swi_img)  # 已经经过归一化[0-1]之间浮点数
@@ -125,14 +126,13 @@ class NiiDataset2(Dataset):
     def __getitem__(self, idx):
         
         img,label,file_name,pred_box = self.data[idx]
-        img=img.astype(np.float32)  #原本的大小是20，40，16
        
         img=img.astype(np.uint8)  #转换为uint8类型，再通过toTensor转换为【0-1】之间，归一化
-        img=img[:,:16,:]  #前一半
+        swi_img=img[:,:16,:]  #前一半
         if self.transform:  #transforms.toTensor()操作会将形状为(H,W,depth)的数组转换为(depth,H,W)，其实是对的，因为3D-CNN输入第一个维度就是depth
-            img = self.transform(img)
+            swi_img = self.transform(swi_img)
         
-        return img, label,file_name,pred_box
+        return swi_img, label,file_name,pred_box,img  #还要返回img是因为还要传给phase网络
 
 #region
 # 数据加载函数
@@ -193,6 +193,64 @@ class CNN3D(nn.Module):
         x = self.dropout(x)
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
+        return x
+
+class ComplexCNN3D(nn.Module):
+    def __init__(self, classes):
+        super(ComplexCNN3D, self).__init__()
+        
+        # 增加卷积层和使用残差连接
+        self.conv1 = nn.Conv3d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm3d(32)
+        self.conv2 = nn.Conv3d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm3d(64)
+        
+        self.conv3 = nn.Conv3d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm3d(128)
+        self.conv4 = nn.Conv3d(128, 128, kernel_size=3, stride=1, padding=1)
+        self.bn4 = nn.BatchNorm3d(128)
+        
+        self.conv5 = nn.Conv3d(128, 256, kernel_size=3, stride=1, padding=1)
+        self.bn5 = nn.BatchNorm3d(256)
+        
+        # 引入残差连接
+        self.residual_block = nn.Sequential(
+            nn.Conv3d(128, 128, kernel_size=1),
+            nn.BatchNorm3d(128)
+        )
+        
+        self.pool = nn.MaxPool3d(kernel_size=2, stride=2)
+        
+        # 更复杂的全连接层
+        self.fc1 = nn.Linear(256*2*2*2, 512)  # 增加更大的隐藏层
+        self.fc2 = nn.Linear(512, 128)
+        self.fc3 = nn.Linear(128, 32)
+        self.fc4 = nn.Linear(32, classes)
+        
+        # Dropout 和正则化
+        self.dropout = nn.Dropout(0.5)
+        
+    def forward(self, x):
+        # 前向传播增加残差连接
+        x1 = self.pool(torch.relu(self.bn1(self.conv1(x))))
+        x2 = torch.relu(self.bn2(self.conv2(x1)))
+        x3 = self.pool(torch.relu(self.bn3(self.conv3(x2))))
+        
+        # 使用残差连接
+        residual = self.residual_block(x3)
+        x4 = torch.relu(self.bn4(self.conv4(x3 + residual)))  # 跳跃连接
+        
+        x5 = self.pool(torch.relu(self.bn5(self.conv5(x4))))
+        
+        # 扁平化
+        x = x5.view(-1, 256*2*2*2)
+        
+        # 更复杂的全连接层
+        x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = torch.relu(self.fc2(x))
+        x = torch.relu(self.fc3(x))
+        x = self.fc4(x)  # 输出层
         return x
 
 # 训练和测试函数
@@ -286,7 +344,7 @@ def train_model(model, train_loader,test_loader, criterion, optimizer,scheduler,
         #如果best_loss小但是当前test_loss大的话，就有一轮没有提升了
         if best_loss - test_loss > min_delta:  
             best_loss = test_loss
-            torch.save(model.state_dict(), f"parameters/swi/CMB_3DCNN_norm_lr0001_91.pth")
+            torch.save(model.state_dict(), f"parameters/res_model/swi/CMB_3DCNN_norm_lr0001_test.pth")
             no_improvement_count = 0  # Reset the counter if there's an improvement
         else:
             no_improvement_count += 1
@@ -379,7 +437,7 @@ def test_model(model, test_loader):
     all_pred_labels=[]
     all_boxes=[]
     with torch.no_grad():
-        for inputs, labels ,file_name,box in test_loader:
+        for inputs, labels ,file_name,box,raw in test_loader:
             inputs, labels = inputs.cuda(), labels.cuda()  #初始得到的是 bsz,16,32,16
             inputs=inputs.reshape(inputs.shape[0], 1, 16, 16, 16)
             outputs = model(inputs)
@@ -413,7 +471,34 @@ def test_model(model, test_loader):
             box=all_boxes[i]
             f.write(f"{sample_name:<30}|{label:<5}|{pred_label:<5}|{str(box):<10}\n")
     #endregion  
+    
+def predict_model(model, test_loader):
+    # 在test_model中加入是否进行可视化的代码
+    # 将分类错误的样本保存下来，然后进行可视化
+    model.eval()
+   
+    pha_data=[]
+
+    
+    with torch.no_grad():
+        for inputs, labels ,file_name,box,raw in test_loader:
+            inputs, labels = inputs.cuda(), labels.cuda()  #初始得到的是 bsz,16,32,16
+            inputs=inputs.reshape(inputs.shape[0], 1, 16, 16, 16)
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs, 1)
+            for index, predict in enumerate(predicted):
+                if predict==1:
+                    pha_data.append([raw[index].cpu().numpy(),labels[index].cpu().numpy(),file_name[index],box[index].cpu().numpy()])
+                    
+            
+    return pha_data
+    
+    
         
+            
+
+    
+
 def CMB_3DCNN_main(resolution):
     class_names = ['Non_CMB', 'CMB']
     class_labels = [0, 1]  #Non-CMB:0, CMB:1
@@ -462,12 +547,13 @@ def CMB_3DCNN_main(resolution):
     # test_loader = DataLoader(train_dataset, batch_size=64, shuffle=False)
     # valid_loader = DataLoader(valid_dataset, batch_size=2, shuffle=False)
 
-    model = CNN3D(2).cuda()
+    # model = CNN3D(2).cuda()
+    model = ComplexCNN3D(2).cuda()
     
     # 定义类别权重，对于CMB出血点应该给予更高的权重
-    class_weights = torch.tensor([1.0, 90.0]).cuda()  # Non-CMB 的权重是 1.0，CMB 的权重是 5.0，与标签顺序一致
+    class_weights = torch.tensor([1.0, 80.0]).cuda()  # Non-CMB 的权重是 1.0，CMB 的权重是 5.0，与标签顺序一致
     criterion = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = ExponentialLR(optimizer, gamma=0.8)
     # scheduler = CosineAnnealingLR(optimizer, T_max=100, eta_min=0)
 
@@ -477,7 +563,8 @@ def CMB_3DCNN_main(resolution):
         plot_loss_curve(train_loss,test_loss,save_path='secondStage/figs/loss_curve_norm_lr_exp.png')
         
     if Test:
-        model.load_state_dict(torch.load(f"parameters/swi/CMB_3DCNN_norm_lr0001_91.pth"))
+        # model.load_state_dict(torch.load(f"parameters/swi/CMB_3DCNN_norm_lr0001_91.pth"))
+        model.load_state_dict(torch.load(f"parameters/res_model/swi/CMB_3DCNN_norm_lr0001_test.pth"))
         test_model(model, test_loader)
     
     if Val:
@@ -485,8 +572,8 @@ def CMB_3DCNN_main(resolution):
         val_model(model, valid_loader)
 
 if __name__ == "__main__":
-    # Train = True
-    Train = False
+    Train = True
+    # Train = False
     
     Test = True
     # Test=False
