@@ -17,6 +17,7 @@ import subprocess
 import imageio
 from pathlib import Path
 from my_tool.utils import read_swi_data
+from continue_code import process_dir
 
 
 # 命令行参数解析
@@ -87,7 +88,7 @@ def nii2img(file_path,output_dir):
     # output_dir = '/mnt/hdd1/zhulu/hospital/0017691773FILT/HD-BET/test'
     img = nib.load(file_path)
     img_fdata = img.get_fdata()
-    print("方向代码:", nib.aff2axcodes(img.affine))  # 应输出 ('L', 'P', 'S')
+    # print("方向代码:", nib.aff2axcodes(img.affine))  # 应输出 ('L', 'P', 'S')
     
     
     # 获取图像的维度
@@ -131,7 +132,7 @@ def phase_mask_extract(mask_img_path,phase_img_path,output_dir):
     mask_img = nib.load(mask_img_path)
     # phase_img = nib.load('/mnt/hdd1/zhulu/blood_stage2/blood_anno/all_niigz/0019014525FILT.nii.gz')
     phase_img = nib.load(phase_img_path)
-    print("方向代码:", nib.aff2axcodes(phase_img.affine))  # 应输出 ('L', 'P', 'S')
+    # print("方向代码:", nib.aff2axcodes(phase_img.affine))  # 应输出 ('L', 'P', 'S')
 
     
     # # 获取图像数据
@@ -314,7 +315,7 @@ def patient_build_nii(patient_dict,model):
                     # cv2.imwrite(os.path.join("temp","draw-"+img),image_swi_draw)
                     #没有数据归一化操作
                     crop_Data=np.hstack((crop_swi,crop_phase))  #看一下是否是在第二个维度上进行的拼接
-                    file_name=f"/mnt/hdd1/zhulu/hospital/second_stage/val_all/suspect/{patient}-{layer_num}-{j}"
+                    file_name=f"suspect/{patient}-{layer_num}-{j}"
                     all_data.append([crop_Data,1,file_name,xyxy.squeeze()])  #在真实测试时，是没有标签的，随便给一个真实标签，让其预测分类
 
     
@@ -361,7 +362,7 @@ if __name__ == "__main__":
     reshape_size=16
     #dicom转nii
     for dicom_patient in os.listdir(dicom_dir):
-        if "0018699418" !=dicom_patient:
+        if "0018847234" !=dicom_patient:
             continue
         dicom_patient_dir=os.path.join(dicom_dir,dicom_patient)
         for dicom_data in os.listdir(dicom_patient_dir):  #在一个病人下有两个dicom文件，一个是swi，一个是pha
@@ -424,3 +425,5 @@ if __name__ == "__main__":
     
     
     patient_build_nii(patient_dict,model)
+
+    process_dir("txt/patient")
