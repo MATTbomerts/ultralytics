@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=2 python main.py --dicom_dir data --nii_dir  temp --png_dir png
