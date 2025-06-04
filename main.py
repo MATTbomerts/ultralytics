@@ -1,22 +1,19 @@
-from ultralytics import YOLO
+
 import cv2
 import numpy as np
 import os
-from ultralytics.utils.ops import xyxy2xywh,clip_boxes,xywh2xyxy
 import re
 import nibabel as nib
 from secondStage.T3D_cnn import NiiDataset2 as swi_NiiDataset2,predict_model,ComplexCNN3D as swi_CNN3D
 from secondStage.T3D_cnn_phase import PredNiiDataset as phase_NiiDataset,ComplexCNN3D as phase_CNN3D,val_model as phase_val_model
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 import torch
-from ultralytics.utils.metrics import box_iou
 import torchvision.transforms as transforms
 import  SimpleITK as sitk 
 import argparse
 import subprocess
 import imageio
 from pathlib import Path
-from my_tool.utils import read_swi_data
 from continue_code import process_dir
 
 
@@ -324,11 +321,12 @@ def patient_build_nii(patient_dict,model):
     transforms.Lambda(lambda x: x.permute(1, 2, 0))  
 ])
 
-
+    device = torch.device('cpu')
+    
     val_dataset=swi_NiiDataset2(all_data,transform) #加入归一化
     valid_loader = DataLoader(val_dataset, batch_size=2, shuffle=False)
-    swi_model_3D.load_state_dict(torch.load(f"parameters/res_model/swi/CMB_3DCNN_lr0001_90_adamw_focal90_gamma2_none_last.pth"))
-    pha_model_3D.load_state_dict(torch.load(f"parameters/res_model/phase/CMB_3DCNN_norm_lr0001_adamw_focal90_last.pth"))
+    swi_model_3D.load_state_dict(torch.load(f"parameters/res_model/swi/CMB_3DCNN_lr0001_90_adamw_focal90_gamma2_none_last.pth",map_location=device))
+    pha_model_3D.load_state_dict(torch.load(f"parameters/res_model/phase/CMB_3DCNN_norm_lr0001_adamw_focal90_last.pth",map_location=device))
     # model_3D.load_state_dict(torch.load(f"parameters/{resolution}/CMB_3DCNN_new4.pth"))
     # swi预测为出血点的解雇哦
     pha_data=predict_model(swi_model_3D,valid_loader) 
@@ -351,11 +349,10 @@ if __name__ == "__main__":
     fixed_width = 16  # 设置固定宽度
     fixed_height = 16 # 设置固定高度
     
-    # 加载YOLOv8模型
-    model = YOLO("runs/detect/train34/weights/best.pt")   # 模型位置
+    
     # 3D 分类模型加载
-    swi_model_3D=swi_CNN3D(2).cuda()
-    pha_model_3D=phase_CNN3D(2).cuda()
+    swi_model_3D=swi_CNN3D(2).cpu()
+    pha_model_3D=phase_CNN3D(2).cpu()
 
     gain,pad,shape=1.02,10,(512,512,3)  #原医学图像图只有一个通道，是灰白图
     BGR=True
@@ -369,7 +366,6 @@ if __name__ == "__main__":
             dcm_p=os.path.join(dicom_patient_dir,dicom_data)
             original_image = load_dicom(dcm_p)
             norm_image=original_image
-            # norm_image = normalize(original_image)
             
             patient_nii = Path(dicom_patient_dir).stem
             suffix="swi.nii" if "LocalP" not in dicom_data else "pha.nii"
@@ -389,7 +385,8 @@ if __name__ == "__main__":
         # if not os.path.exists(swi_nii_file) and os.path.exists(pha_nii_file):
         #     continue
         
-        command = f"hd-bet -i {swi_nii_file}" #在相同路径下输出bet,以及mask文件
+        command = f"hd-bet -i {swi_nii_file} -device cpu -tta 0" #在相同路径下输出bet,以及mask文件
+        
         try:
             subprocess.run(command, shell=True, check=True)
             print(f"Processed successfully.")
@@ -423,7 +420,10 @@ if __name__ == "__main__":
         patient_imgs=sort_files(patient_imgs) #根据图像的切片号进行排序，后面才能直接根据index进行上下层读取
         patient_dict[patient_dir]=patient_imgs  #切面没有进行排序
     
-    
+    from ultralytics import YOLO
+    from ultralytics.utils.ops import xyxy2xywh,clip_boxes,xywh2xyxy
+    # 加载YOLOv8模型
+    model = YOLO("runs/detect/train34/weights/best.pt").to("cpu")   # 模型位置
     patient_build_nii(patient_dict,model)
 
     process_dir("txt/patient")

@@ -7,12 +7,13 @@ import sys
 
 
 def get_patient_data(patient_dir):
-    label_dir=patient_dir.replace("blood_anno4","DATA3")
+    
 
     swi="swi"
     # swi="Series-Ax SWAN new"
     pha="phase"
     # pha="Series-FILT_PHA_ Ax SWAN new"
+    label_dir=os.path.join(patient_dir,swi,"label")
     
     patient_swi_dir=os.path.join(patient_dir,swi)
     #读出的还是原本的图像名称，没有病人前缀
