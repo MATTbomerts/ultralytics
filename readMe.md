@@ -7,6 +7,10 @@ conda activate myenv
 ### 安装环境依赖
 pip install -r requirements.txt
 
+### 去头骨HD-BET安装
+1：git clone https://github.com/MIC-DKFZ/HD-BET
+2：pip install -e .
+详细见 https://github.com/MIC-DKFZ/HD-BET
 
 
 ## 数据准备
@@ -43,3 +47,5 @@ python main.py \
 
 |   |   |--results.json
 
+## 注意：
+1：需在根目录下创建txt文件夹，保存预测结果
