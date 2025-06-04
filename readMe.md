@@ -1,15 +1,15 @@
 ## 环境安装
 
 ### 创建python环境，版本(3.9.19)
-conda create -n myenv python=3.7
+conda create -n myenv python=3.7   
 conda activate myenv 
 
 ### 安装环境依赖
 pip install -r requirements.txt
 
 ### 去头骨HD-BET安装
-1：git clone https://github.com/MIC-DKFZ/HD-BET
-2：pip install -e .
+1：git clone https://github.com/MIC-DKFZ/HD-BET  
+2：pip install -e .  
 详细见 https://github.com/MIC-DKFZ/HD-BET
 
 
